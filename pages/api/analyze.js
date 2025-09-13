@@ -1,33 +1,43 @@
+// pages/api/analyze.js
 export default async function handler(req, res) {
-  if (req.method === "POST") {
-    const { text } = req.body;
+  if (req.method !== "POST") return res.status(405).end();
 
-    if (!text) {
-      return res.status(400).json({ error: "No text provided" });
-    }
+  const { text, fileName } = req.body || {};
+  if (!text && !fileName) return res.status(400).json({ error: "No text provided" });
 
-    try {
-      const response = await fetch("https://api.generativeai.google/v1beta2/models/text-bison-001:generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_GEMINI_API_KEY}`
-        },
-        body: JSON.stringify({
-          prompt: `Analyze this legal document text and give a clear, plain-language summary:\n\n${text}`,
-          temperature: 0.2,
-          maxOutputTokens: 500
-        })
-      });
+  try {
+    const apiUrl = process.env.GEMINI_API_URL;
+    const apiKey = process.env.GEMINI_API_KEY;
 
-      const data = await response.json();
-      res.status(200).json(data);
+    const prompt = `You are Lexi, an assistant for legal documents. Summarize and flag key clauses in plain language:\n\n${text}`;
 
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: "Gemini API error" });
-    }
-  } else {
-    res.status(405).json({ error: "Method not allowed" });
+    const r = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: prompt
+              }
+            ]
+          }
+        ]
+      }),
+    });
+
+    const json = await r.json();
+
+    const summary = json?.candidates?.[0]?.content?.parts?.[0]?.text || "No response from Gemini.";
+
+    res.status(200).json({ summary, raw: json });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Analysis failed", details: err.message });
   }
 }
